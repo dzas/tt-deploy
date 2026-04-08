@@ -1,0 +1,22 @@
+services:
+  trusttunnel:
+    build:
+      context: ./local/mock-trusttunnel
+    container_name: trusttunnel
+    restart: unless-stopped
+    volumes:
+      - ./local/data:/trusttunnel_endpoint
+
+  trusttunnel-admin-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trusttunnel-admin-bot
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    volumes:
+      - ./local/data:/opt/trusttunnel
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - trusttunnel

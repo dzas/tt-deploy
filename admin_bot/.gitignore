@@ -1,0 +1,16 @@
+# Build artifacts
+**/bin/
+**/obj/
+
+# User/IDE files
+.vs/
+*.user
+*.suo
+
+# Environment files
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,15 @@
+{
+  "version": "__VERSION__",
+  "images": {
+    "trusttunnel_endpoint": "ghcr.io/OWNER/tt-endpoint:__VERSION__",
+    "admin_bot": "ghcr.io/OWNER/tt_admin_bot:__VERSION__"
+  },
+  "assets": {
+    "installer": "installer-__VERSION__.tar.gz",
+    "checksums": "SHA256SUMS"
+  },
+  "notes": [
+    "Replace OWNER with your GitHub org or username.",
+    "Use image digests (@sha256:...) for production stability."
+  ]
+}

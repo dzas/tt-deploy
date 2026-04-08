@@ -1,0 +1,59 @@
+name: Release Installer Bundle
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, e.g. v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          if [[ -z "${VERSION}" ]]; then
+            echo "Version is empty" >&2
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p dist
+          tar -czf "dist/installer-${VERSION}.tar.gz" installer
+
+          cp release/manifest.template.json "dist/manifest-${VERSION}.json"
+          sed -i "s/__VERSION__/${VERSION}/g" "dist/manifest-${VERSION}.json"
+
+          pushd dist >/dev/null
+          sha256sum "installer-${VERSION}.tar.gz" "manifest-${VERSION}.json" > SHA256SUMS
+          popd >/dev/null
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          files: |
+            dist/installer-${{ steps.version.outputs.version }}.tar.gz
+            dist/manifest-${{ steps.version.outputs.version }}.json
+            dist/SHA256SUMS

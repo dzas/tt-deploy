@@ -1,0 +1,30 @@
+# Secrets and local env
+*.env
+*.env.local
+*.env.*.local
+!*.env.example
+
+# IDE
+.idea/
+.vscode/
+
+# OS / logs / temp
+*.log
+*.tmp
+*.swp
+
+# Local diagnostics and archives
+tt_diag_*.log
+tt_diag_*.log.gz
+server/
+server/*.tar
+
+# Nested repository metadata (monorepo cleanup)
+admin_bot/.git/
+server/.git/
+
+# Local test artifacts
+admin_bot/local/
+admin_bot/.env.local
+admin_bot/src/**/bin/
+admin_bot/src/**/obj/
