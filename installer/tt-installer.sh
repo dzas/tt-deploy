@@ -28,6 +28,7 @@ TT_NETWORK_MODE="host"
 TT_LOG_LEVEL="debug"
 TT_DOMAIN_IP_EXPECTED=""
 TT_CONFIG_SOURCE_DIR=""
+TT_SETUP_MODE="wizard"
 
 TLS_MODE="letsencrypt-http01"
 LE_EMAIL=""
@@ -430,14 +431,21 @@ validate_required() {
 
   [[ -n "$TT_ENDPOINT_FQDN" ]] || { warn "Missing TT_ENDPOINT_FQDN"; missing=1; }
   [[ -n "$TT_IMAGE" ]] || { warn "Missing TT_IMAGE"; missing=1; }
+  [[ "$TT_SETUP_MODE" == "wizard" || "$TT_SETUP_MODE" == "non-interactive" ]] || {
+    warn "Invalid TT_SETUP_MODE: $TT_SETUP_MODE (allowed: wizard, non-interactive)"; missing=1;
+  }
 
   case "$TLS_MODE" in
     letsencrypt-http01)
-      [[ -n "$LE_EMAIL" ]] || { warn "Missing LE_EMAIL for ${TLS_MODE}"; missing=1; }
-      [[ -n "$LE_DOMAIN" ]] || { warn "Missing LE_DOMAIN for ${TLS_MODE}"; missing=1; }
+      if [[ "$TT_SETUP_MODE" == "non-interactive" ]]; then
+        [[ -n "$LE_EMAIL" ]] || { warn "Missing LE_EMAIL for ${TLS_MODE} in non-interactive mode"; missing=1; }
+        [[ -n "$LE_DOMAIN" ]] || { warn "Missing LE_DOMAIN for ${TLS_MODE} in non-interactive mode"; missing=1; }
+      fi
       ;;
     letsencrypt-dns01)
-      [[ -n "$LE_DOMAIN" ]] || { warn "Missing LE_DOMAIN for ${TLS_MODE}"; missing=1; }
+      if [[ "$TT_SETUP_MODE" == "non-interactive" ]]; then
+        [[ -n "$LE_DOMAIN" ]] || { warn "Missing LE_DOMAIN for ${TLS_MODE} in non-interactive mode"; missing=1; }
+      fi
       ;;
     existing-cert)
       [[ -n "$EXISTING_CERT_PATH" ]] || { warn "Missing EXISTING_CERT_PATH"; missing=1; }
@@ -471,7 +479,7 @@ print_check() {
   local label="$1"
   local status="$2"
   local details="${3:-}"
-  printf "- [%s] %s" "$status" "$label"
+  printf -- "- [%s] %s" "$status" "$label"
   if [[ -n "$details" ]]; then
     printf " (%s)" "$details"
   fi
@@ -537,6 +545,7 @@ s00_plan_summary() {
   cat <<EOF
 Prepare before apply:
 - FQDN: ${TT_ENDPOINT_FQDN:-<not-set>}
+- Setup mode: ${TT_SETUP_MODE}
 - Domain validation mode: ${TLS_MODE}
 - Public image for TrustTunnel: ${TT_IMAGE}
 - Public image for admin bot: ${BOT_IMAGE}
@@ -637,8 +646,10 @@ s03_preflight_ports() {
 
 s04_collect_or_load_config() {
   ask_if_missing "TT_ENDPOINT_FQDN" "TrustTunnel domain (FQDN)"
-  ask_if_missing "LE_EMAIL" "Let's Encrypt email"
-  if [[ "$TLS_MODE" == "letsencrypt-http01" || "$TLS_MODE" == "letsencrypt-dns01" ]]; then
+  if [[ "$TT_SETUP_MODE" == "non-interactive" ]]; then
+    ask_if_missing "LE_EMAIL" "Let's Encrypt email"
+  fi
+  if [[ "$TT_SETUP_MODE" == "non-interactive" && ( "$TLS_MODE" == "letsencrypt-http01" || "$TLS_MODE" == "letsencrypt-dns01" ) ]]; then
     ask_if_missing "LE_DOMAIN" "Let's Encrypt domain"
   fi
 
@@ -779,6 +790,35 @@ s12_prepare_tls() {
   esac
 }
 
+require_tt_core_files() {
+  local missing=0
+  local name
+  for name in vpn.toml hosts.toml credentials.toml; do
+    if [[ ! -f "${TT_DATA_DIR}/${name}" ]]; then
+      warn "Missing required file after setup: ${TT_DATA_DIR}/${name}"
+      missing=1
+    fi
+  done
+  [[ "$missing" -eq 0 ]] || die "TrustTunnel setup did not produce required files"
+}
+
+run_setup_wizard_interactive() {
+  [[ -t 0 && -t 1 ]] || die "TT_SETUP_MODE=wizard requires an interactive TTY session"
+
+  warn "Starting interactive setup_wizard for initial TrustTunnel configuration"
+  warn "In wizard, choose certificate method and save TLS hosts to hosts.toml"
+
+  sudo docker run --rm -it \
+    --network "$TT_NETWORK_MODE" \
+    --cap-add=NET_ADMIN \
+    --device=/dev/net/tun \
+    -v "$TT_DATA_DIR:/trusttunnel_endpoint" \
+    -v /etc/letsencrypt:/etc/letsencrypt:ro \
+    -w /trusttunnel_endpoint \
+    --entrypoint /bin/setup_wizard \
+    "$TT_IMAGE"
+}
+
 copy_if_exists() {
   local src="$1"
   local dst="$2"
@@ -820,11 +860,13 @@ s13_render_tt_configs() {
   fi
 
   TT_NEEDS_BOOTSTRAP="true"
-  [[ -n "$TT_BOOTSTRAP_USERNAME" ]] || die "Config files are missing. Set TT_BOOTSTRAP_USERNAME for first-time setup_wizard run."
-  [[ -n "$TT_BOOTSTRAP_PASSWORD" ]] || die "Config files are missing. Set TT_BOOTSTRAP_PASSWORD for first-time setup_wizard run."
+  if [[ "$TT_SETUP_MODE" == "non-interactive" ]]; then
+    [[ -n "$TT_BOOTSTRAP_USERNAME" ]] || die "Config files are missing. Set TT_BOOTSTRAP_USERNAME for first-time non-interactive setup."
+    [[ -n "$TT_BOOTSTRAP_PASSWORD" ]] || die "Config files are missing. Set TT_BOOTSTRAP_PASSWORD for first-time non-interactive setup."
+  fi
 
-  if [[ "$TLS_MODE" == "letsencrypt-http01" ]]; then
-    [[ -n "$LE_EMAIL" ]] || die "LE_EMAIL is required for first-time letsencrypt setup"
+  if [[ "$TLS_MODE" == "letsencrypt-http01" && "$TT_SETUP_MODE" == "non-interactive" ]]; then
+    [[ -n "$LE_EMAIL" ]] || die "LE_EMAIL is required for letsencrypt-http01 setup"
   fi
 
   if [[ "$TLS_MODE" == "letsencrypt-dns01" ]]; then
@@ -834,6 +876,12 @@ s13_render_tt_configs() {
 
 s14_deploy_trusttunnel() {
   command_in_step "Pull TrustTunnel image" sudo docker pull "$TT_IMAGE"
+
+  if [[ "$TT_NEEDS_BOOTSTRAP" == "true" && "$TT_SETUP_MODE" == "wizard" ]]; then
+    command_in_step "Run TrustTunnel setup_wizard interactively" run_setup_wizard_interactive
+    require_tt_core_files
+    TT_NEEDS_BOOTSTRAP="false"
+  fi
 
   if [[ "$DRY_RUN" != "true" ]]; then
     local cert_type="self-signed"
@@ -879,7 +927,7 @@ TT_CERT_PROVIDED_KEY_PATH=${cert_key_path}
 EOF
     fi
 
-    if [[ "$TT_NEEDS_BOOTSTRAP" == "true" ]]; then
+    if [[ "$TT_NEEDS_BOOTSTRAP" == "true" && "$TT_SETUP_MODE" == "non-interactive" ]]; then
       cat >> "${INSTALL_ROOT}/trusttunnel.env" <<EOF
 TT_CREDENTIALS=${TT_BOOTSTRAP_USERNAME}:${TT_BOOTSTRAP_PASSWORD}
 EOF
@@ -920,6 +968,7 @@ s15_verify_trusttunnel() {
   if [[ "$TT_NEEDS_BOOTSTRAP" == "true" ]]; then
     log "Initial setup_wizard run expected on first start (missing configs were detected)."
   fi
+  [[ -f "${TT_DATA_DIR}/hosts.toml" ]] || die "hosts.toml is missing after TrustTunnel deployment"
 }
 
 s16_deploy_admin_bot() {
@@ -961,6 +1010,10 @@ s17_verify_admin_bot() {
 
 s18_generate_client_link_sample() {
   if [[ "$DRY_RUN" == "true" ]]; then
+    return 0
+  fi
+  if [[ ! -f "${TT_DATA_DIR}/hosts.toml" ]]; then
+    warn "hosts.toml is missing; skip sample link generation"
     return 0
   fi
   if ! sudo docker ps --format '{{.Names}}' | grep -qx "$TT_CONTAINER_NAME"; then

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using TrustTunnel.AdminBot.Models;
 using TrustTunnel.AdminBot.Options;
 using Tomlyn;
@@ -108,18 +109,34 @@ public sealed class CredentialsService(AdminBotOptions options, ILogger<Credenti
 
     private static string RenderCredentials(IEnumerable<ClientCredential> users)
     {
-        var document = new CredentialsDocument
-        {
-            Client = users
-                .Select(static user => new ClientCredentialToml
-                {
-                    Username = user.Username,
-                    Password = user.Password,
-                })
-                .ToList(),
-        };
+        var sb = new StringBuilder();
+        var first = true;
 
-        return TomlSerializer.Serialize(document);
+        foreach (var user in users)
+        {
+            if (!first)
+            {
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("[[client]]");
+            sb.Append("username = \"").Append(EscapeTomlString(user.Username)).AppendLine("\"");
+            sb.Append("password = \"").Append(EscapeTomlString(user.Password)).AppendLine("\"");
+
+            first = false;
+        }
+
+        return sb.ToString();
+    }
+
+    private static string EscapeTomlString(string value)
+    {
+        return value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal)
+            .Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\t", "\\t", StringComparison.Ordinal);
     }
 
     private sealed class CredentialsDocument

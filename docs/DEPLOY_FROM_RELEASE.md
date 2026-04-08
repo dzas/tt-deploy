@@ -25,8 +25,6 @@ sha256sum -c SHA256SUMS
 ```bash
 mkdir -p /opt/tt-release && tar -xzf installer.tar.gz -C /opt/tt-release
 cd /opt/tt-release/installer
-cp installer.env.example installer.env
-cp secrets.env.example secrets.env
 chmod 600 secrets.env
 ```
 
