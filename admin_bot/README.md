@@ -1,5 +1,13 @@
 # TrustTunnel AdminBot
 
+Language: [EN](README.md) | [RU](README_RU.md)
+
+Repository docs:
+- Deploy monorepo (EN): `../README.md`
+- Deploy monorepo (RU): `../README_RU.md`
+- Installer guide (EN): `../installer/INSTALLER_GUIDE.md`
+- Installer guide (RU): `../installer/INSTALLER_GUIDE_RU.md`
+
 Telegram bot for basic TrustTunnel user management on a self-hosted server.
 
 ## Features
